@@ -387,16 +387,10 @@ pub fn make_executable(_: &Path) -> io::Result<()> {
 }
 
 /// The files of a release, as they sit beside herdr-core.exe.
-/// conpty.dll runs OpenConsole.exe from a folder named after its own CPU.
-#[cfg(target_arch = "aarch64")]
-const CONPTY_ARCH: &str = r"conpty\arm64";
-#[cfg(not(target_arch = "aarch64"))]
-const CONPTY_ARCH: &str = r"conpty\x64";
-#[cfg(target_arch = "aarch64")]
-const OPENCONSOLE: &str = r"conpty\arm64\OpenConsole.exe";
-#[cfg(not(target_arch = "aarch64"))]
-const OPENCONSOLE: &str = r"conpty\x64\OpenConsole.exe";
-const RELEASE: [&str; 3] = ["herdr-core.exe", r"conpty\conpty.dll", OPENCONSOLE];
+/// conpty.dll starts the OpenConsole of the machine's CPU, not the
+/// process's: both ship, so an update carries both.
+const RELEASE: [&str; 4] =
+    ["herdr-core.exe", r"conpty\conpty.dll", r"conpty\x64\OpenConsole.exe", r"conpty\arm64\OpenConsole.exe"];
 
 /// Puts the release whose herdr-core.exe is `from` where `dest`'s folder
 /// is. Windows won't overwrite a running file but will rename one: every
@@ -414,7 +408,7 @@ pub fn swap_in(from: &Path, dest: &Path, works: impl Fn(&Path) -> bool) -> io::R
         )
         .open(dir.join(".update.lock"))
     })?;
-    for leftover in [dir.to_path_buf(), dir.join("conpty"), dir.join(CONPTY_ARCH)]
+    for leftover in [dir.to_path_buf(), dir.join("conpty"), dir.join(r"conpty\x64"), dir.join(r"conpty\arm64")]
         .iter()
         .filter_map(|d| std::fs::read_dir(d).ok())
         .flatten()

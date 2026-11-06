@@ -73,9 +73,20 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  # On the ARM64 machine: the native ARM64 hc, and the x64 hc emulated (what
+  # ARM64 users run today) as the control. Both ship both OpenConsoles.
   test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: aarch64-pc-windows-msvc, conpty: arm64 }
+          - { target: x86_64-pc-windows-msvc, conpty: x64 }
+    name: test (${{ matrix.target }})
     runs-on: windows-11-arm
-    timeout-minutes: 45
+    timeout-minutes: 60
+    env:
+      TARGET: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -85,7 +96,7 @@ jobs:
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: clippy
-          targets: ${{ env.TARGET }}
+          targets: ${{ matrix.target }}
       # Zig's own ARM64 Windows build crashes (0xc0000005) building
       # libghostty-vt: the x64 one runs under emulation and still targets
       # aarch64-windows-msvc. build.rs takes it from ZIG.
@@ -106,9 +117,7 @@ jobs:
       # __udivti3 is a weak symbol in both Zig's compiler_rt inside
       # libghostty-vt and Rust's compiler_builtins). Release is what ships.
       - shell: pwsh
-        run: scripts/fetch-conpty.ps1 -Dest "target/$env:TARGET/release" -Arch arm64
-      # tests/windows.rs gives a PowerShell script 20 s; a fresh image's first
-      # Windows PowerShell start can take longer. Measured, then warmed.
+        run: scripts/fetch-conpty.ps1 -Dest "target/$env:TARGET/release" -Arch ${{ matrix.conpty }}
       - name: PowerShell start time (cold, then warm)
         shell: pwsh
         run: |
@@ -116,6 +125,10 @@ jobs:
             $t = Measure-Command { powershell -NoProfile -Command "exit 0" }
             "powershell start $i`: $([int]$t.TotalMilliseconds) ms"
           }
+      - name: The 7501 answer, with its output
+        continue-on-error: true
+        shell: bash
+        run: cargo test --release --locked --target "$TARGET" --test windows -- --exact programs_get_the_cores_answers_to_their_questions --nocapture
       - name: Tests
         shell: bash
         run: cargo test --release --locked --no-fail-fast --target "$TARGET" -- --test-threads 1

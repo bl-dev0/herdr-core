@@ -1,7 +1,9 @@
-# Puts Microsoft's ConPTY beside herdr-core.exe: <Dest>\conpty\conpty.dll and
-# <Dest>\conpty\<Arch>\OpenConsole.exe (conpty.dll looks for OpenConsole in a
-# folder named after its own CPU). Windows' own ConPTY swallows the answers
-# hc gives programs (7501, DA), so hc ships this one. Pinned and checked.
+# Puts Microsoft's ConPTY beside herdr-core.exe: <Dest>\conpty\conpty.dll for
+# hc's own CPU (-Arch), and both <Dest>\conpty\x64\ and arm64\OpenConsole.exe:
+# conpty.dll starts the OpenConsole of the machine's CPU, not the process's,
+# so an x64 hc on an ARM64 machine needs arm64\ too. Windows' own ConPTY
+# swallows the answers hc gives programs (7501, DA), so hc ships this one.
+# Pinned and checked.
 param(
     [Parameter(Mandatory)][string]$Dest,
     [ValidateSet("x64", "arm64")][string]$Arch = "x64"
@@ -31,10 +33,13 @@ if (-not (Test-Path $zip)) {
 Check $zip $sha.nupkg
 if (Test-Path $work) { Remove-Item -Recurse -Force $work }
 Expand-Archive $zip $work
-New-Item -ItemType Directory -Force "$Dest\conpty\$Arch" | Out-Null
-foreach ($pair in @(("runtimes/win-$Arch/native/conpty.dll", "conpty\conpty.dll"), ("build/native/runtimes/$Arch/OpenConsole.exe", "conpty\$Arch\OpenConsole.exe"))) {
+New-Item -ItemType Directory -Force "$Dest\conpty\x64", "$Dest\conpty\arm64" | Out-Null
+foreach ($pair in @(
+        ("runtimes/win-$Arch/native/conpty.dll", "conpty\conpty.dll"),
+        ("build/native/runtimes/x64/OpenConsole.exe", "conpty\x64\OpenConsole.exe"),
+        ("build/native/runtimes/arm64/OpenConsole.exe", "conpty\arm64\OpenConsole.exe"))) {
     Check (Join-Path $work $pair[0]) $sha[$pair[0]]
     Copy-Item -Force (Join-Path $work $pair[0]) (Join-Path $Dest $pair[1])
 }
 Remove-Item -Recurse -Force $work
-"ConPTY $version ($Arch) in $Dest\conpty"
+"ConPTY $version (conpty.dll $Arch) in $Dest\conpty"
