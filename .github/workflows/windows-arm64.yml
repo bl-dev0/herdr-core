@@ -102,8 +102,11 @@ jobs:
           "ZIG=$zig" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
       - shell: bash
         run: cargo clippy --locked --target "$TARGET" --all-targets -- -D warnings
+      # Release profile: a debug test binary doesn't link on ARM64 (LNK1227,
+      # __udivti3 is a weak symbol in both Zig's compiler_rt inside
+      # libghostty-vt and Rust's compiler_builtins). Release is what ships.
       - shell: pwsh
-        run: scripts/fetch-conpty.ps1 -Dest "target/$env:TARGET/debug" -Arch arm64
+        run: scripts/fetch-conpty.ps1 -Dest "target/$env:TARGET/release" -Arch arm64
       - name: Tests
         shell: bash
-        run: cargo test --locked --no-fail-fast --target "$TARGET" -- --test-threads 2
+        run: cargo test --release --locked --no-fail-fast --target "$TARGET" -- --test-threads 2
