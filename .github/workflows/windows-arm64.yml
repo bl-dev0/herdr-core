@@ -1,0 +1,87 @@
+# Windows on ARM64 (Snapdragon): the release zip, built natively on GitHub's
+# windows-11-arm runner, plus clippy and tests/windows.rs, which drive real
+# programs through the ARM64 ConPTY. Unsigned; an artifact, not a release.
+name: windows-arm64
+
+on:
+  push:
+    branches: [windows-arm64]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RUST_TOOLCHAIN: 1.95.0
+  TARGET: aarch64-pc-windows-msvc
+  CARGO_PROFILE_DEV_DEBUG: "1"
+  CARGO_PROFILE_TEST_DEBUG: "1"
+  HC_TEST_WATCHDOG_S: "120"
+  HC_TEST_SLOW_RUNNER: "1"
+
+jobs:
+  build:
+    runs-on: windows-11-arm
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: ${{ env.TARGET }}
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+      - name: Build
+        shell: bash
+        run: cargo build --release --locked --target "$TARGET" -p herdr-core
+      - name: Pack
+        shell: pwsh
+        run: |
+          $bin = "target/$env:TARGET/release/herdr-core.exe"
+          & $bin --version
+          if ($LASTEXITCODE) { throw "it does not run" }
+          # A clean Windows has no Visual C++ runtime.
+          $text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($bin)).ToLower()
+          foreach ($dll in "vcruntime140", "msvcp140", "api-ms-win-crt-") { if ($text.Contains($dll)) { throw "herdr-core.exe imports $dll" } }
+          New-Item -ItemType Directory -Force stage/THIRD-PARTY-NOTICES, dist | Out-Null
+          Copy-Item $bin stage/
+          Copy-Item LICENSE stage/
+          Copy-Item crates/herdr-core/THIRD-PARTY-NOTICES stage/THIRD-PARTY-NOTICES/herdr-core.txt
+          scripts/fetch-conpty.ps1 -Dest stage -Arch arm64
+          Copy-Item distribution/windows/* stage/THIRD-PARTY-NOTICES/
+          tar -a -cf dist/herdr-core-windows-aarch64.zip -C stage herdr-core.exe conpty LICENSE THIRD-PARTY-NOTICES
+          if ($LASTEXITCODE) { throw "zip failed" }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: herdr-core-windows-aarch64
+          path: dist/herdr-core-windows-aarch64.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  test:
+    runs-on: windows-11-arm
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy
+          targets: ${{ env.TARGET }}
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.16.0
+      - shell: bash
+        run: cargo clippy --locked --target "$TARGET" --all-targets -- -D warnings
+      - shell: pwsh
+        run: scripts/fetch-conpty.ps1 -Dest "target/$env:TARGET/debug" -Arch arm64
+      - name: Tests
+        shell: bash
+        run: cargo test --locked --no-fail-fast --target "$TARGET" -- --test-threads 2

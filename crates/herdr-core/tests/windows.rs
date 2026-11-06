@@ -13,6 +13,10 @@ use std::time::{Duration, Instant};
 
 const BIN: &str = env!("CARGO_BIN_EXE_herdr-core");
 static LIVE: Mutex<Vec<(String, PathBuf)>> = Mutex::new(Vec::new());
+#[cfg(target_arch = "aarch64")]
+const OPENCONSOLE: &str = r"conpty\arm64\OpenConsole.exe";
+#[cfg(not(target_arch = "aarch64"))]
+const OPENCONSOLE: &str = r"conpty\x64\OpenConsole.exe";
 
 struct Session {
     name: String,
@@ -251,7 +255,7 @@ if ($request.method -ne 'hello') { exit 2 }
 /// with `mark` at its end (a PE runs with bytes appended).
 fn release(dir: &Path, mark: &str) -> PathBuf {
     let built = Path::new(BIN).parent().unwrap();
-    for rel in [r"conpty\conpty.dll", r"conpty\x64\OpenConsole.exe"] {
+    for rel in [r"conpty\conpty.dll", OPENCONSOLE] {
         std::fs::create_dir_all(dir.join(rel).parent().unwrap()).unwrap();
         std::fs::copy(built.join(rel), dir.join(rel)).expect("run scripts\\fetch-conpty.ps1 first");
     }
@@ -307,7 +311,7 @@ fn an_update_that_cannot_finish_puts_everything_back() {
     let new = release(&s.root.join("new"), "new-build");
     // Something holds the last file without letting it move (a scanner).
     let held = std::os::windows::fs::OpenOptionsExt::share_mode(std::fs::OpenOptions::new().read(true), 0)
-        .open(s.root.join(r"inst\conpty\x64\OpenConsole.exe"))
+        .open(s.root.join("inst").join(OPENCONSOLE))
         .unwrap();
     let out = hc_at(&s, &exe, &["update", "--from", new.to_str().unwrap()]);
     drop(held);
